@@ -1,5 +1,11 @@
 # 日本旅遊最佳出發時機分析 Dashboard
 
+## 專案展示
+
+![Dashboard Full](assets/dashboard-full.png)
+
+---
+
 分析台灣飛日本的來回票價（中華航空 CI、長榮航空 BR、星宇航空 JX）、JPY/TWD 匯率與旅遊舒適度，找出最划算且舒適的出國時機，並輸出單一可離線瀏覽的 HTML Dashboard。
 
 ## 安裝
@@ -92,6 +98,7 @@ japan-travel-dashboard/
 │   ├── exchange_rates.csv   # JPY/TWD 匯率（date, jpy_twd_rate）
 │   └── comfort_scores.csv   # 旅遊舒適度（month, city, avg_temp_c, rain_probability_pct, crowd_index）
 ├── output/              # 產生的 HTML Dashboard
+├── assets/              # Dashboard 展示圖片
 └── tests/               # pytest 單元測試
 ```
 
