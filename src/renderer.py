@@ -514,8 +514,10 @@ def render_dashboard(
       background: {_CARD_BG};
       color: #fff;
       border-color: #3a3a6a;
-      border-bottom: 2px solid {_CARD_BG};
+      border-bottom: 1px solid #f39c12;
       margin-bottom: -2px;
+      font-weight: 600;
+      box-shadow: inset 0 -2px 0 #f39c12;
     }}
 
     /* 分頁內容 */
@@ -635,7 +637,7 @@ switchTab(0);
     margin:48px 0 24px 0;
     letter-spacing:0.03em;
 ">
-    Japan Travel Dashboard Project ｜ LI ZONG HAN<br>
+    Japan Travel Dashboard Project ｜ LzhLabo<br>
 </footer>
 </body>
 </html>"""
