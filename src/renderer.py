@@ -46,6 +46,92 @@ def _fig_to_html(fig: go.Figure, div_id: str) -> str:
         config={"responsive": True, "displayModeBar": False},
     )
 
+def _series_to_js_array(s: "pd.Series") -> str:
+    """將 pd.Series (index=1–12) 轉為 12 元素的 JS 陣列字串，NaN → null。"""
+    vals = []
+    for m in range(1, 13):
+        v = s.get(m)
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            vals.append("null")
+        else:
+            vals.append(f"{float(v):.4f}")
+    return "[" + ", ".join(vals) + "]"
+
+
+def _bool_series_to_js_array(s: "pd.Series") -> str:
+    """將 bool pd.Series (index=1–12) 轉為 12 元素的 JS 陣列字串。"""
+    vals = []
+    for m in range(1, 13):
+        v = s.get(m, False)
+        vals.append("true" if bool(v) else "false")
+    return "[" + ", ".join(vals) + "]"
+
+
+def _build_weight_panel(tab_idx: int) -> str:
+    """產生可折疊的權重調整面板 HTML。"""
+    return f"""
+<div class="weight-panel" id="weight-panel-{tab_idx}">
+  <div class="weight-panel-header" onclick="toggleWeightPanel({tab_idx})">
+    <span class="weight-panel-title">⚖️ 權重調整</span>
+    <span class="weight-summary" id="weight-summary-{tab_idx}">
+      TCI：舒適 50% ／ 票價 40% ／ 匯率 10%　｜　舒適：氣溫 40% ／ 降雨 30% ／ 人潮 30%
+    </span>
+    <button class="weight-toggle-btn" id="weight-toggle-btn-{tab_idx}" aria-expanded="false" aria-controls="weight-body-{tab_idx}">
+      展開 ▼
+    </button>
+  </div>
+  <div class="weight-panel-body" id="weight-body-{tab_idx}" style="display:none">
+    <div class="weight-groups">
+      <div class="weight-group">
+        <div class="weight-group-title">TCI 權重</div>
+        <div class="slider-row">
+          <label>舒適度</label>
+          <input type="range" min="0" max="100" value="50" class="weight-slider"
+            id="w-comfort-{tab_idx}" oninput="onWeightChange({tab_idx})">
+          <span class="slider-val" id="wv-comfort-{tab_idx}"><span class="slider-num">50</span> <span class="slider-pct">(50%)</span></span>
+        </div>
+        <div class="slider-row">
+          <label>票價</label>
+          <input type="range" min="0" max="100" value="40" class="weight-slider"
+            id="w-fare-{tab_idx}" oninput="onWeightChange({tab_idx})">
+          <span class="slider-val" id="wv-fare-{tab_idx}"><span class="slider-num">40</span> <span class="slider-pct">(40%)</span></span>
+        </div>
+        <div class="slider-row">
+          <label>匯率</label>
+          <input type="range" min="0" max="100" value="10" class="weight-slider"
+            id="w-rate-{tab_idx}" oninput="onWeightChange({tab_idx})">
+          <span class="slider-val" id="wv-rate-{tab_idx}"><span class="slider-num">10</span> <span class="slider-pct">(10%)</span></span>
+        </div>
+      </div>
+      <div class="weight-group">
+        <div class="weight-group-title">舒適度子權重</div>
+        <div class="slider-row">
+          <label>氣溫</label>
+          <input type="range" min="0" max="100" value="40" class="weight-slider"
+            id="w-temp-{tab_idx}" oninput="onWeightChange({tab_idx})">
+          <span class="slider-val" id="wv-temp-{tab_idx}"><span class="slider-num">40</span> <span class="slider-pct">(40%)</span></span>
+        </div>
+        <div class="slider-row">
+          <label>降雨</label>
+          <input type="range" min="0" max="100" value="30" class="weight-slider"
+            id="w-rain-{tab_idx}" oninput="onWeightChange({tab_idx})">
+          <span class="slider-val" id="wv-rain-{tab_idx}"><span class="slider-num">30</span> <span class="slider-pct">(30%)</span></span>
+        </div>
+        <div class="slider-row">
+          <label>人潮</label>
+          <input type="range" min="0" max="100" value="30" class="weight-slider"
+            id="w-crowd-{tab_idx}" oninput="onWeightChange({tab_idx})">
+          <span class="slider-val" id="wv-crowd-{tab_idx}"><span class="slider-num">30</span> <span class="slider-pct">(30%)</span></span>
+        </div>
+      </div>
+    </div>
+    <div class="weight-actions">
+      <button class="reset-btn" onclick="resetWeights({tab_idx})">↺ 重設為預設權重</button>
+    </div>
+  </div>
+</div>"""
+
+
 def _build_tci_chart(score_result: ScoreResult, city: str) -> go.Figure:
     tci = score_result.total_score.reindex(_MONTHS)
     fare = score_result.fare_score.reindex(_MONTHS)
@@ -262,7 +348,8 @@ def _build_comfort_chart(comfort_result: ComfortAnalysisResult, city: str) -> go
     fig.update_xaxes(title_text="月份")
     return fig
 
-def _build_tci_table(score_result: ScoreResult) -> str:
+def _build_tci_table_rows(score_result: ScoreResult) -> str:
+    """產生 TCI 表格的 <tbody> 內容（不含 <table> 外框），供初始渲染與 JS 動態更新共用。"""
     tci = score_result.total_score.reindex(_MONTHS)
     fare = score_result.fare_score.reindex(_MONTHS)
     rate = score_result.rate_score.reindex(_MONTHS)
@@ -306,6 +393,11 @@ def _build_tci_table(score_result: ScoreResult) -> str:
           <td>{_fmt(r_val)}</td>
         </tr>"""
 
+    return rows_html
+
+
+def _build_tci_table(score_result: ScoreResult) -> str:
+    rows_html = _build_tci_table_rows(score_result)
     return f"""
     <table class="tci-table">
       <thead><tr>
@@ -354,28 +446,78 @@ def _build_city_tab_content(
     else:
         hero = "資料不足，無法計算最佳月份"
 
+    # --- 嵌入子分數 JSON 供前端 JS 使用 ---
+    fare_score_js   = _series_to_js_array(score_result.fare_score)
+    rate_score_js   = _series_to_js_array(score_result.rate_score)
+    comfort_score_js = _series_to_js_array(score_result.comfort_score)
+    tci_score_js    = _series_to_js_array(score_result.total_score)
+    estimated_js    = _bool_series_to_js_array(score_result.fare_estimated)
+
+    # 舒適度子分數
+    temp_s  = score_result.temp_score
+    rain_s  = score_result.rain_score
+    crowd_s = score_result.crowd_score
+    temp_score_js  = _series_to_js_array(temp_s)  if temp_s  is not None else "[null,null,null,null,null,null,null,null,null,null,null,null]"
+    rain_score_js  = _series_to_js_array(rain_s)  if rain_s  is not None else "[null,null,null,null,null,null,null,null,null,null,null,null]"
+    crowd_score_js = _series_to_js_array(crowd_s) if crowd_s is not None else "[null,null,null,null,null,null,null,null,null,null,null,null]"
+
+    weight_panel = _build_weight_panel(tab_idx)
+
     return f"""
 <div class="tab-panel" id="panel-{tab_idx}">
-  <div class="city-hero">{emoji} {city}｜{hero}</div>
+
+  <script>
+  (function() {{
+    var _d = window._cityData = window._cityData || {{}};
+    _d[{tab_idx}] = {{
+      fareScore:    {fare_score_js},
+      rateScore:    {rate_score_js},
+      comfortScore: {comfort_score_js},
+      tciScore:     {tci_score_js},
+      estimated:    {estimated_js},
+      tempScore:    {temp_score_js},
+      rainScore:    {rain_score_js},
+      crowdScore:   {crowd_score_js},
+      chartTciId:   "chart-tci-{tab_idx}",
+      tableId:      "tci-table-body-{tab_idx}",
+      heroId:       "city-hero-text-{tab_idx}",
+      descId:       "tci-desc-{tab_idx}"
+    }};
+  }})();
+  </script>
+
+  <div class="city-hero" id="city-hero-{tab_idx}">
+    {emoji} {city}｜<span id="city-hero-text-{tab_idx}">{hero}</span>
+  </div>
+
+  {weight_panel}
 
   <section>
     <h2>📊 {city} 綜合旅遊指數（TCI）排名</h2>
-    <p class="desc">TCI = 舒適度分數（50%）＋ 票價分數（40%）＋ 匯率分數（10%）。
-      舒適度依 {city} 自身氣候計算，不與其他城市平均。<br>
+    <p class="desc" id="tci-desc-{tab_idx}">TCI = 舒適度分數（<span class="desc-comfort-pct">50%</span>）＋ 票價分數（<span class="desc-fare-pct">40%</span>）＋ 匯率分數（<span class="desc-rate-pct">10%</span>）。<br>
       標示 <strong>~</strong> 的月份票價為<span style="color:#f39c12">估算票價</span>（以同月份其他目的地平均補值）；
-      標示 <strong>*</strong> 的月份無票價資料，TCI 由舒適度、機票票價與匯率加權計算。
+      標示 <strong>*</strong> 的月份無票價資料，TCI 分數區間：
       <span style="color:#2ecc71">■</span> ≥70 優秀 &nbsp;
       <span style="color:#f39c12">■</span> 40–69 普通 &nbsp;
       <span style="color:#e74c3c">■</span> &lt;40 較差</p>
     <div class="chart-wrap">{tci_div}</div>
-    {tci_table}
+    <table class="tci-table">
+      <thead><tr>
+        <th>排名</th><th>月份</th>
+        <th>TCI 總分</th>
+        <th id="th-comfort-{tab_idx}">舒適分 (50%)</th>
+        <th id="th-fare-{tab_idx}">票價分 (40%)</th>
+        <th id="th-rate-{tab_idx}">匯率分 (10%)</th>
+      </tr></thead>
+      <tbody id="tci-table-body-{tab_idx}">{_build_tci_table_rows(score_result)}</tbody>
+    </table>
   </section>
 
   <section>
     <h2>🌤️ {city} 旅遊舒適度分析</h2>
-    <p class="desc">
+    <p class="desc" id="comfort-desc-{tab_idx}">
       藍色長條為降雨機率（%），紅色折線為人潮指數（1–10），橙色虛線為平均氣溫（°C）。<br>
-      舒適度分數 = 氣溫 40% + 降雨 30% + 人潮 30%。<br>
+      舒適度分數 = 氣溫（<span class="desc-temp-pct">40%</span>）+ 降雨（<span class="desc-rain-pct">30%</span>）+ 人潮（<span class="desc-crowd-pct">30%</span>）。<br>
       氣溫：10–25°C 滿分；低於 10°C 每度扣 2 分，0°C 以下每度扣 3 分；高於 25°C 每度扣 3 分，30°C 以上每度扣 5 分。<br>
       降雨：降雨機率越高，舒適度越低。<br>
       <strong>人潮：</strong>指數 1–5 輕微扣分，6–7 中度扣分，8–10 重度扣分（二次曲線）。
@@ -465,7 +607,20 @@ def render_dashboard(
     plotly_js_inline = f"<script>{get_plotlyjs()}</script>"
     today = date.today().isoformat()
 
-    html = f"""<!DOCTYPE html>
+    html = _build_html_page(tab_buttons, tab_panels, plotly_js_inline, today)
+
+    try:
+        output_path.write_text(html, encoding="utf-8")
+    except OSError as exc:
+        print(f"[錯誤] 無法寫入 {output_path}：{exc}", file=sys.stderr)
+        raise
+
+    print(f"輸出路徑：{output_path.resolve()}")
+
+
+def _build_html_page(tab_buttons: str, tab_panels: str, plotly_js_inline: str, today: str) -> str:
+    """組裝完整的 HTML 頁面字串。"""
+    return f"""<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
@@ -558,7 +713,6 @@ def render_dashboard(
       width: 100% !important;
       min-width: 0 !important;
     }}
-    /* Force plotly SVG to fill container */
     .chart-wrap .plotly-graph-div {{
       width: 100% !important;
     }}
@@ -587,10 +741,150 @@ def render_dashboard(
       border-radius: 50%; margin-right: 4px; vertical-align: middle;
     }}
 
+    /* ── 權重調整面板 ── */
+    .weight-panel {{
+      background: #0f1e3a;
+      border: 1px solid #2a3a5a;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      overflow: hidden;
+    }}
+    .weight-panel-header {{
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 11px 18px;
+      cursor: pointer;
+      user-select: none;
+      flex-wrap: wrap;
+    }}
+    .weight-panel-header:hover {{ background: rgba(255,255,255,0.03); }}
+    .weight-panel-title {{
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: {_TEXT};
+      white-space: nowrap;
+    }}
+    .weight-summary {{
+      flex: 1;
+      font-size: 0.78rem;
+      color: {_SUBTEXT};
+      min-width: 0;
+    }}
+    .weight-toggle-btn {{
+      background: #1e3060;
+      color: {_TEXT};
+      border: 1px solid #3a4a7a;
+      border-radius: 4px;
+      padding: 4px 12px;
+      font-size: 0.78rem;
+      font-family: inherit;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s;
+    }}
+    .weight-toggle-btn:hover {{ background: #2a4080; }}
+    .weight-panel-body {{
+      padding: 16px 18px 14px;
+      border-top: 1px solid #2a3a5a;
+    }}
+    .weight-groups {{
+      display: flex;
+      gap: 32px;
+      flex-wrap: wrap;
+    }}
+    .weight-group {{
+      flex: 1;
+      min-width: 220px;
+    }}
+    .weight-group-title {{
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #a0b0d0;
+      margin-bottom: 10px;
+      padding-bottom: 5px;
+      border-bottom: 1px solid #2a3a5a;
+    }}
+    .slider-row {{
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 9px;
+    }}
+    .slider-row label {{
+      width: 52px;
+      font-size: 0.82rem;
+      color: {_SUBTEXT};
+      flex-shrink: 0;
+    }}
+    .weight-slider {{
+      flex: 1;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 5px;
+      border-radius: 3px;
+      background: #2a3a5a;
+      outline: none;
+      cursor: pointer;
+    }}
+    .weight-slider::-webkit-slider-thumb {{
+      -webkit-appearance: none;
+      appearance: none;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #56adff;
+      cursor: pointer;
+      box-shadow: 0 0 6px rgba(76,155,232,0.6);
+    }}
+    .weight-slider::-moz-range-thumb {{
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #56adff;
+      cursor: pointer;
+      box-shadow: 0 0 6px rgba(76,155,232,0.6);
+    }}
+    .slider-val {{
+      width: 100px;
+      text-align: right;
+      font-size: 0.82rem;
+      font-weight: 500;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }}
+    .slider-num {{
+      color: #6bb8ff;
+      font-weight: 600;
+    }}
+    .slider-pct {{
+      color: #a0a0b0;
+      margin-left: 5px;
+      font-weight: 500;
+    }}
+    .weight-actions {{
+      margin-top: 14px;
+      display: flex;
+      justify-content: flex-end;
+    }}
+    .reset-btn {{
+      background: #1e3060;
+      color: {_TEXT};
+      border: 1px solid #3a4a7a;
+      border-radius: 5px;
+      padding: 6px 16px;
+      font-size: 0.82rem;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.15s;
+    }}
+    .reset-btn:hover {{ background: #2a4080; }}
+
     @media (max-width: 768px) {{
       header, .tab-bar, .tab-panel {{ padding-left: 14px; padding-right: 14px; }}
       header h1 {{ font-size: 1.2rem; }}
       .tab-btn {{ padding: 8px 14px; font-size: 0.85rem; }}
+      .weight-groups {{ flex-direction: column; gap: 16px; }}
     }}
   </style>
 </head>
@@ -608,6 +902,7 @@ def render_dashboard(
 {tab_panels}
 
 <script>
+// ── Tab 切換 ──────────────────────────────────────────────────────────────
 function switchTab(idx) {{
   document.querySelectorAll('.tab-panel').forEach(function(p, i) {{
     p.classList.toggle('visible', i === idx);
@@ -615,7 +910,6 @@ function switchTab(idx) {{
   document.querySelectorAll('.tab-btn').forEach(function(b, i) {{
     b.classList.toggle('active', i === idx);
   }});
-  // 切換分頁後觸發 plotly 重新計算寬度
   setTimeout(function() {{
     var panel = document.getElementById('panel-' + idx);
     if (panel) {{
@@ -626,8 +920,235 @@ function switchTab(idx) {{
     }}
   }}, 50);
 }}
-// 預設顯示第一個分頁
 switchTab(0);
+
+// ── 權重調整面板 ──────────────────────────────────────────────────────────
+function toggleWeightPanel(idx) {{
+  var body = document.getElementById('weight-body-' + idx);
+  var btn  = document.getElementById('weight-toggle-btn-' + idx);
+  var open = body.style.display === 'none';
+  body.style.display = open ? 'block' : 'none';
+  btn.textContent    = open ? '收合 \u25b2' : '\u5c55\u958b \u25bc';
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}}
+
+// ── 正規化輔助 ────────────────────────────────────────────────────────────
+function normalizeWeights(a, b, c) {{
+  var sum = a + b + c;
+  if (sum === 0) {{ return [1/3, 1/3, 1/3]; }}
+  return [a/sum, b/sum, c/sum];
+}}
+
+function pct(v) {{ return Math.round(v * 100) + '%'; }}
+
+// ── TCI 顏色 ──────────────────────────────────────────────────────────────
+function tciColor(score) {{
+  if (score >= 70) return '#2ecc71';
+  if (score >= 40) return '#f39c12';
+  return '#e74c3c';
+}}
+
+// ── 滑桿變更 → 重新計算 ──────────────────────────────────────────────────
+function onWeightChange(idx) {{
+  var d = window._cityData[idx];
+  if (!d) return;
+
+  var wComfort = +document.getElementById('w-comfort-' + idx).value;
+  var wFare    = +document.getElementById('w-fare-'    + idx).value;
+  var wRate    = +document.getElementById('w-rate-'    + idx).value;
+  var wTemp    = +document.getElementById('w-temp-'    + idx).value;
+  var wRain    = +document.getElementById('w-rain-'    + idx).value;
+  var wCrowd   = +document.getElementById('w-crowd-'   + idx).value;
+
+  var tciW     = normalizeWeights(wComfort, wFare, wRate);
+  var comfortW = normalizeWeights(wTemp, wRain, wCrowd);
+
+  document.getElementById('wv-comfort-' + idx).innerHTML = '<span class="slider-num">' + wComfort + '</span> <span class="slider-pct">(' + pct(tciW[0]) + ')</span>';
+  document.getElementById('wv-fare-'    + idx).innerHTML = '<span class="slider-num">' + wFare    + '</span> <span class="slider-pct">(' + pct(tciW[1]) + ')</span>';
+  document.getElementById('wv-rate-'    + idx).innerHTML = '<span class="slider-num">' + wRate    + '</span> <span class="slider-pct">(' + pct(tciW[2]) + ')</span>';
+  document.getElementById('wv-temp-'    + idx).innerHTML = '<span class="slider-num">' + wTemp    + '</span> <span class="slider-pct">(' + pct(comfortW[0]) + ')</span>';
+  document.getElementById('wv-rain-'    + idx).innerHTML = '<span class="slider-num">' + wRain    + '</span> <span class="slider-pct">(' + pct(comfortW[1]) + ')</span>';
+  document.getElementById('wv-crowd-'   + idx).innerHTML = '<span class="slider-num">' + wCrowd   + '</span> <span class="slider-pct">(' + pct(comfortW[2]) + ')</span>';
+
+  var summary = document.getElementById('weight-summary-' + idx);
+  if (summary) {{
+    summary.textContent =
+      'TCI\uff1a\u8212\u9069 ' + pct(tciW[0]) + ' \uff0f \u7968\u50f9 ' + pct(tciW[1]) + ' \uff0f \u532f\u7387 ' + pct(tciW[2]) +
+      '\u3000|\u3000\u8212\u9069\uff1a\u6c23\u6eab ' + pct(comfortW[0]) + ' \uff0f \u964d\u96e8 ' + pct(comfortW[1]) + ' \uff0f \u4eba\u6f6e ' + pct(comfortW[2]);
+  }}
+
+  var newComfort = [], newTci = [];
+  for (var i = 0; i < 12; i++) {{
+    var ts = d.tempScore[i], rs = d.rainScore[i], cs = d.crowdScore[i];
+    var comfort;
+    if (ts === null && rs === null && cs === null) {{
+      comfort = null;
+    }} else {{
+      comfort = (ts !== null ? ts : 0) * comfortW[0]
+              + (rs !== null ? rs : 0) * comfortW[1]
+              + (cs !== null ? cs : 0) * comfortW[2];
+      comfort = Math.min(100, Math.max(0, comfort));
+    }}
+    newComfort.push(comfort);
+
+    var fare = d.fareScore[i], rate = d.rateScore[i];
+    var tci;
+    if (fare === null && rate === null && comfort === null) {{
+      tci = null;
+    }} else {{
+      tci = (fare    !== null ? fare    : 0) * tciW[1]
+          + (rate    !== null ? rate    : 0) * tciW[2]
+          + (comfort !== null ? comfort : 0) * tciW[0];
+      tci = Math.min(100, Math.max(0, tci));
+      tci = Math.round(tci * 10) / 10;
+    }}
+    newTci.push(tci);
+  }}
+
+  // 更新 TCI 長條圖
+  var chartDiv = document.getElementById(d.chartTciId);
+  if (chartDiv && window.Plotly) {{
+    var colors = [], texts = [];
+    for (var i = 0; i < 12; i++) {{
+      var val = newTci[i];
+      var isEst = d.estimated[i];
+      if (val === null) {{
+        colors.push('#555566'); texts.push('\u7121\u8cc7\u6599');
+      }} else if (isEst) {{
+        colors.push(tciColor(val)); texts.push(val.toFixed(1) + '~');
+      }} else {{
+        colors.push(tciColor(val)); texts.push(val.toFixed(1));
+      }}
+    }}
+    var yVals = newTci.map(function(v) {{ return v === null ? 0 : v; }});
+    Plotly.restyle(chartDiv, {{
+      'marker.color': [colors],
+      'text': [texts],
+      'y': [yVals]
+    }}, [0]);
+
+    var bestVal = null, bestIdx = -1;
+    for (var i = 0; i < 12; i++) {{
+      if (newTci[i] !== null && (bestVal === null || newTci[i] > bestVal)) {{
+        bestVal = newTci[i]; bestIdx = i;
+      }}
+    }}
+    var monthLabels = ['1\u6708','2\u6708','3\u6708','4\u6708','5\u6708','6\u6708','7\u6708','8\u6708','9\u6708','10\u6708','11\u6708','12\u6708'];
+    var annotations = bestIdx >= 0 ? [{{
+      x: monthLabels[bestIdx],
+      y: bestVal + 6,
+      text: '\U0001F3C6 \u6700\u4f73\uff1a' + (bestIdx+1) + '\u6708',
+      showarrow: false,
+      font: {{ size: 12, color: '#f1c40f' }}
+    }}] : [];
+    Plotly.relayout(chartDiv, {{ annotations: annotations }});
+  }}
+
+  // 更新 hero 文字
+  var heroEl = document.getElementById(d.heroId);
+  if (heroEl) {{
+    var bestVal2 = null, bestIdx2 = -1;
+    for (var i = 0; i < 12; i++) {{
+      if (newTci[i] !== null && (bestVal2 === null || newTci[i] > bestVal2)) {{
+        bestVal2 = newTci[i]; bestIdx2 = i;
+      }}
+    }}
+    if (bestIdx2 >= 0) {{
+      heroEl.innerHTML = '\u6700\u4f73\u51fa\u767c\u6708\u4efd\uff1a<span class="hero-month">' + (bestIdx2+1) + ' \u6708</span>\uff08TCI ' + bestVal2.toFixed(1) + ' \u5206\uff09';
+    }} else {{
+      heroEl.textContent = '\u8cc7\u6599\u4e0d\u8db3\uff0c\u7121\u6cd5\u8a08\u7b97\u6700\u4f73\u6708\u4efd';
+    }}
+  }}
+
+  // 更新表格欄位標題
+  var thComfort = document.getElementById('th-comfort-' + idx);
+  var thFare    = document.getElementById('th-fare-'    + idx);
+  var thRate    = document.getElementById('th-rate-'    + idx);
+  if (thComfort) thComfort.textContent = '\u8212\u9069\u5206 (' + pct(tciW[0]) + ')';
+  if (thFare)    thFare.textContent    = '\u7968\u50f9\u5206 (' + pct(tciW[1]) + ')';
+  if (thRate)    thRate.textContent    = '\u532f\u7387\u5206 (' + pct(tciW[2]) + ')';
+
+  // 更新 TCI 表格內容
+  var tbody = document.getElementById(d.tableId);
+  if (tbody) {{
+    var rowData = [];
+    for (var i = 0; i < 12; i++) {{
+      rowData.push({{ month: i+1, tci: newTci[i], comfort: newComfort[i],
+                      fare: d.fareScore[i], rate: d.rateScore[i], est: d.estimated[i] }});
+    }}
+    rowData.sort(function(a, b) {{
+      if (a.tci === null && b.tci === null) return 0;
+      if (a.tci === null) return 1;
+      if (b.tci === null) return -1;
+      return b.tci - a.tci;
+    }});
+
+    var medals = [' \U0001F947', ' \U0001F948', ' \U0001F949'];
+    var html = '';
+    for (var rank = 0; rank < rowData.length; rank++) {{
+      var r = rowData[rank];
+      var medal = rank < 3 && r.tci !== null ? medals[rank] : '';
+      var tciCell, rowClass;
+      if (r.tci === null) {{
+        tciCell = '<span style="color:#666">\u7121\u8cc7\u6599</span>';
+        rowClass = 'row-na';
+      }} else {{
+        var col = tciColor(r.tci);
+        tciCell = '<span style="color:' + col + ';font-weight:bold">' + r.tci.toFixed(1) + '</span>';
+        rowClass = 'row-data';
+      }}
+      function fmtCell(v, isEst) {{
+        if (v === null) return '\u2014';
+        var s = v.toFixed(1);
+        if (isEst) s += ' <span style="color:#f39c12;font-size:0.72em" title="\u4f30\u7b97\u7968\u50f9\uff08\u8de8\u57ce\u5e02\u5e73\u5747\uff09">\u4f30\u7b97</span>';
+        return s;
+      }}
+      html += '<tr class="' + rowClass + '">'
+            + '<td>' + (rank+1) + '</td>'
+            + '<td><strong>' + r.month + '\u6708</strong>' + medal + '</td>'
+            + '<td>' + tciCell + '</td>'
+            + '<td>' + fmtCell(r.comfort, false) + '</td>'
+            + '<td>' + fmtCell(r.fare, r.est) + '</td>'
+            + '<td>' + fmtCell(r.rate, false) + '</td>'
+            + '</tr>';
+    }}
+    tbody.innerHTML = html;
+  }}
+
+  // 更新說明文字中的百分比
+  var descEl = document.getElementById(d.descId);
+  if (descEl) {{
+    var cp = pct(tciW[0]), fp = pct(tciW[1]), rp = pct(tciW[2]);
+    var spanC = descEl.querySelector('.desc-comfort-pct');
+    var spanF = descEl.querySelector('.desc-fare-pct');
+    var spanR = descEl.querySelector('.desc-rate-pct');
+    if (spanC) spanC.textContent = cp;
+    if (spanF) spanF.textContent = fp;
+    if (spanR) spanR.textContent = rp;
+  }}
+
+  var comfortDescEl = document.getElementById('comfort-desc-' + idx);
+  if (comfortDescEl) {{
+    var tp = pct(comfortW[0]), rainp = pct(comfortW[1]), crowdp = pct(comfortW[2]);
+    var spanT = comfortDescEl.querySelector('.desc-temp-pct');
+    var spanRain = comfortDescEl.querySelector('.desc-rain-pct');
+    var spanCrowd = comfortDescEl.querySelector('.desc-crowd-pct');
+    if (spanT) spanT.textContent = tp;
+    if (spanRain) spanRain.textContent = rainp;
+    if (spanCrowd) spanCrowd.textContent = crowdp;
+  }}
+}}
+
+// ── 重設為預設權重 ────────────────────────────────────────────────────────
+function resetWeights(idx) {{
+  document.getElementById('w-comfort-' + idx).value = 50;
+  document.getElementById('w-fare-'    + idx).value = 40;
+  document.getElementById('w-rate-'    + idx).value = 10;
+  document.getElementById('w-temp-'    + idx).value = 40;
+  document.getElementById('w-rain-'    + idx).value = 30;
+  document.getElementById('w-crowd-'   + idx).value = 30;
+  onWeightChange(idx);
+}}
 </script>
 
 <footer style="
@@ -637,15 +1158,7 @@ switchTab(0);
     margin:48px 0 24px 0;
     letter-spacing:0.03em;
 ">
-    Japan Travel Dashboard Project ｜ LzhLabo<br>
+    Japan Travel Dashboard Project &#124; LzhLabo<br>
 </footer>
 </body>
 </html>"""
-
-    try:
-        output_path.write_text(html, encoding="utf-8")
-    except OSError as exc:
-        print(f"[錯誤] 無法寫入 {output_path}：{exc}", file=sys.stderr)
-        raise
-
-    print(f"輸出路徑：{output_path.resolve()}")

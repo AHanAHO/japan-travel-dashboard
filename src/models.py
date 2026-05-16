@@ -387,6 +387,15 @@ class ScoreResult:
     fare_estimated : pd.Series
         index: month (int 1–12)
         values: bool — True 表示該月票價為跨城市平均估算值，非實際票價
+    temp_score : pd.Series | None
+        index: month (int 1–12)
+        values: 氣溫子分數 0–100（供前端權重調整使用）
+    rain_score : pd.Series | None
+        index: month (int 1–12)
+        values: 降雨子分數 0–100（供前端權重調整使用）
+    crowd_score : pd.Series | None
+        index: month (int 1–12)
+        values: 人潮子分數 0–100（供前端權重調整使用）
 
     Notes
     -----
@@ -413,3 +422,6 @@ class ScoreResult:
             dtype=bool,
         )
     )
+    temp_score: "pd.Series | None" = None
+    rain_score: "pd.Series | None" = None
+    crowd_score: "pd.Series | None" = None

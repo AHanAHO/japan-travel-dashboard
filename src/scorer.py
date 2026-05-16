@@ -180,6 +180,49 @@ def calculate_exchange_rate_score(rate_result: RateAnalysisResult) -> pd.Series:
     return scores
 
 
+def calculate_comfort_subscores_for_city(
+    comfort_result: ComfortAnalysisResult,
+    city: str,
+) -> "tuple[pd.Series, pd.Series, pd.Series]":
+    """
+    計算指定城市各月份的三個舒適度子分數（氣溫、降雨、人潮），供前端權重調整使用。
+
+    Returns
+    -------
+    (temp_scores, rain_scores, crowd_scores) : tuple of pd.Series
+        各 Series 的 index=month(1–12)，值為 0–100 分數。
+    """
+    _nan_series = pd.Series(index=_ALL_MONTHS, dtype=float)
+
+    if comfort_result.monthly_comfort.empty:
+        return _nan_series.copy(), _nan_series.copy(), _nan_series.copy()
+
+    df = comfort_result.monthly_comfort.reset_index()
+    city_df = df[df["city"] == city]
+    if city_df.empty:
+        return _nan_series.copy(), _nan_series.copy(), _nan_series.copy()
+
+    monthly = city_df.groupby("month").agg(
+        avg_temp=("avg_temp_c", "mean"),
+        avg_rain=("rain_probability_pct", "mean"),
+        avg_crowd=("crowd_index", "mean"),
+    ).reindex(_ALL_MONTHS)
+
+    temp_scores = monthly["avg_temp"].apply(
+        lambda v: _temperature_score(float(v)) if not pd.isna(v) else float("nan")
+    )
+    rain_scores = (100.0 - monthly["avg_rain"]).clip(0.0, 100.0)
+    crowd_scores = monthly["avg_crowd"].apply(
+        lambda v: _crowd_score(float(v)) if not pd.isna(v) else float("nan")
+    )
+
+    temp_scores.name = "temp_score"
+    rain_scores.name = "rain_score"
+    crowd_scores.name = "crowd_score"
+
+    return temp_scores, rain_scores, crowd_scores
+
+
 def calculate_comfort_score_for_city(
     comfort_result: ComfortAnalysisResult,
     city: str,
@@ -294,6 +337,14 @@ def calculate_tci_for_city(
         comfort_result, city
     ).reindex(_ALL_MONTHS)
 
+    # 取得三個舒適度子分數，供前端權重調整使用
+    temp_score, rain_score, crowd_score = calculate_comfort_subscores_for_city(
+        comfort_result, city
+    )
+    temp_score = temp_score.reindex(_ALL_MONTHS)
+    rain_score = rain_score.reindex(_ALL_MONTHS)
+    crowd_score = crowd_score.reindex(_ALL_MONTHS)
+
     has_any_data = rate_score.notna() | comfort_score.notna() | fare_score.notna()
 
     tci = (
@@ -318,6 +369,9 @@ def calculate_tci_for_city(
         comfort_score=comfort_score,
         total_score=total_score,
         fare_estimated=est,
+        temp_score=temp_score,
+        rain_score=rain_score,
+        crowd_score=crowd_score,
     )
 
 
